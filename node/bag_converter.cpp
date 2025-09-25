@@ -11,6 +11,8 @@
 
 using namespace robosense::lidar;
 
+std::mutex mtx;
+
 inline Packet toRsMsg(const rslidar_msg::RslidarPacket& ros_msg)
 {
   Packet rs_msg;
@@ -270,8 +272,15 @@ inline bool DestinationPointCloudRosBag::isProcessing()
 
 inline void DestinationPointCloudRosBag::sendPointCloud(const LidarPointCloudMsg& msg)
 {
-  output_bag_->write("/rslidar_points", ros::Time().fromSec(msg.timestamp), toRosMsg(msg, frame_id_, send_by_rows_)); // The time this is being written to may not account for the latency
-  in_progress_ = false;
+  // Skip the first few frames to allow the lidar timestamp to stabilize
+  static int count = 0;
+  count++;
+  if (count < 3)
+    return;
+
+  auto ros_msg = toRosMsg(msg, frame_id_, send_by_rows_);
+  std::lock_guard<std::mutex> lock(mtx);
+  output_bag_->write("/rslidar_points", ros::Time().fromSec(ros_msg.header.stamp.toSec() + 0.122), ros_msg);
 }
 
 int main(int argc, char** argv)
@@ -320,6 +329,7 @@ int main(int argc, char** argv)
     dst->init(lidar_config[0]);
     dst->setOutputBag(output_bag_);
     source->regPointCloudCallback(dst);
+    source->start();
 
     // Iterate over messages in the input bag
     rosbag::View view(input_bag_);
@@ -332,7 +342,10 @@ int main(int argc, char** argv)
     for (const rosbag::MessageInstance& m : view)
     {
         // Copy all original messages to output bag
-        output_bag_->write(m.getTopic(), m.getTime(), m);
+        {
+          std::lock_guard<std::mutex> lock(mtx);
+          output_bag_->write(m.getTopic(), m.getTime(), m);
+        }
 
         // If this is a lidar packet, also generate point cloud
         if (m.getTopic() == "/rslidar_packets" &&
@@ -341,15 +354,13 @@ int main(int argc, char** argv)
             auto packet_msg = m.instantiate<rslidar_msg::RslidarPacket>();
             if (packet_msg)
             {
-                dst->setProcessingStart();
                 source->putPacket(*packet_msg);
-                while (dst->isProcessing())
-                {
-                  ros::Duration(0.001).sleep(); // Sleep briefly to allow processing
-                  ROS_INFO("Waiting for point cloud generation...");
-                }
-                ROS_INFO("Point cloud generated for packet seq: %u", packet_msg->header.seq);
                 packet_count++;
+            }
+            if (packet_count % 200 == 0)
+            {
+              // Sleep briefly to allow point cloud processing to catch up - since it is in a different thread
+              ros::Duration(0.01).sleep();
             }
         }
 
@@ -364,7 +375,8 @@ int main(int argc, char** argv)
         }
     }
 
-    source->stop();
+    // Extra sleep to ensure all point clouds are processed
+    ros::Duration(1).sleep();
 
     input_bag_.close();
     output_bag_->close();
