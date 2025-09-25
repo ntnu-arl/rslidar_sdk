@@ -104,7 +104,7 @@ if(roscpp_FOUND)
   add_definitions(-DROS_FOUND)
 
   find_package(roslib QUIET)
-  include_directories(${roscpp_INCLUDE_DIRS} ${roslib_INCLUDE_DIRS})
+  include_directories(${roscpp_INCLUDE_DIRS} ${roslib_INCLUDE_DIRS} ${catkin_INCLUDE_DIRS})
   set(ROS_LIBS ${roscpp_LIBRARIES} ${roslib_LIBRARIES})
 
   add_definitions(-DRUN_IN_ROS_WORKSPACE)
@@ -112,10 +112,12 @@ if(roscpp_FOUND)
   find_package(catkin REQUIRED COMPONENTS
     roscpp
     sensor_msgs
+    rosbag
     roslib)
 
   catkin_package(CATKIN_DEPENDS 
     sensor_msgs 
+    rosbag
     roslib)
 
 else(roscpp_FOUND)
@@ -168,9 +170,17 @@ add_executable(rslidar_sdk_node
                node/rslidar_sdk_node.cpp
                src/manager/node_manager.cpp)
 
-target_link_libraries(rslidar_sdk_node                   
+add_executable(bag_converter
+               node/bag_converter.cpp)
+
+target_link_libraries(rslidar_sdk_node
                       ${YAML_CPP_LIBRARIES}
                       ${rs_driver_LIBRARIES})
+
+target_link_libraries(bag_converter
+                      ${YAML_CPP_LIBRARIES}
+                      ${rs_driver_LIBRARIES}
+                      ${catkin_LIBRARIES})
 
 #Ros#
 if(roscpp_FOUND)
@@ -178,7 +188,10 @@ if(roscpp_FOUND)
   target_link_libraries(rslidar_sdk_node 
     ${ROS_LIBS})
 
-  install(TARGETS rslidar_sdk_node
+  target_link_libraries(bag_converter
+    ${ROS_LIBS})
+
+  install(TARGETS rslidar_sdk_node bag_converter
           RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
           LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
           ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION})
