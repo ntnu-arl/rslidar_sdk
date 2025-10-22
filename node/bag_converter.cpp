@@ -218,6 +218,9 @@ public:
 
   virtual void init(const YAML::Node& config);
   virtual void sendPointCloud(const LidarPointCloudMsg& msg);
+#ifdef ENABLE_IMU_DATA_PARSE
+  virtual void sendImuData(const std::shared_ptr<ImuData>& msg);
+#endif
   virtual ~DestinationPointCloudRosBag() = default;
   void setOutputBag(std::shared_ptr<rosbag::Bag> bag);
   void setProcessingStart();
@@ -282,6 +285,14 @@ inline void DestinationPointCloudRosBag::sendPointCloud(const LidarPointCloudMsg
   std::lock_guard<std::mutex> lock(mtx);
   output_bag_->write("/rslidar_points", ros::Time().fromSec(ros_msg.header.stamp.toSec() + 0.122), ros_msg);
 }
+
+#ifdef ENABLE_IMU_DATA_PARSE
+inline void DestinationPointCloudRosBag::sendImuData(const std::shared_ptr<ImuData>& msg)
+{
+  // IMU data handling for bag converter - currently not implemented
+  // If needed, IMU data could be written to the bag file here
+}
+#endif
 
 int main(int argc, char** argv)
 {
